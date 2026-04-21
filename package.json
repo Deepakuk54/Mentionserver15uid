@@ -1,5 +1,5 @@
 {
-  "name": "rdx-group-mention",
+  "name": "rdx-group-mention-v4",
   "version": "4.0.0",
   "main": "index.js",
   "dependencies": {
