@@ -1,165 +1,282 @@
-const fs = require('fs');
-const path = require('path');
 const express = require('express');
 const wiegine = require('fca-mafiya');
 const axios = require('axios');
-const WebSocket = require('ws');
-const multer = require('multer');
-const { v4: uuidv4 } = require('uuid');
-
+const fs = require('fs');
 const app = express();
-const upload = multer({ dest: 'uploads/' });
-const PORT = process.env.PORT || 7860;
-const TASKS_FILE = path.join(__dirname, 'database_v5.json');
 
-let nameCache = new Map();
-let activeEngines = new Map();
+const PORT = process.env.PORT || 3000;
+app.use(express.json());
 
-// Modern Mobile User Agents (Important for 15-digit IDs)
-const AGENTS = [
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.40 Mobile Safari/537.36",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
-];
+const DB_FILE = 'drb_master_db.json';
+if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ locks: [] }));
 
-const EMOJIS = ["🔥","⚡","👑","💀","🔫","🦅","🦁"];
+const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEEPAK RAJPUT BRAND | MASTER V3</title>
+    <style>
+        :root {
+            --bg: #0b0e14;
+            --card-bg: #151921;
+            --border: #2d333b;
+            --accent: #58a6ff;
+            --success: #238636;
+            --danger: #da3633;
+            --text-main: #adbac7;
+            --text-bright: #ffffff;
+        }
 
-function saveToDB(t) { try { fs.writeFileSync(TASKS_FILE, JSON.stringify(t, null, 2)); } catch(e){} }
-function loadFromDB() {
-    if(fs.existsSync(TASKS_FILE)) { try { return JSON.parse(fs.readFileSync(TASKS_FILE)); } catch(e){ return []; } }
-    return [];
-}
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-class Messenger {
-    constructor(ws, token) { this.ws = ws; this.sessions = []; this.idx = 0; this.token = token; }
-    log(m) {
-        const t = `[${new Date().toLocaleTimeString()}] ${m}`;
-        if(this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify({type:'log', message:t}));
-        console.log(`[${this.token}] ${t}`);
-    }
-    
-    async send(msg, tid, mentionUID) {
-        const active = this.sessions.filter(s => s.ok);
-        if(!active.length) return { success: false, reason: "No Sessions" };
-        const s = active[this.idx % active.length];
-        this.idx++;
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
 
-        return new Promise(async (res) => {
-            try {
-                const mUID = String(mentionUID).trim();
-                let name = nameCache.get(mUID);
+        .header h1 {
+            color: var(--accent);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-size: 28px;
+            margin: 0;
+        }
 
-                if (!name) {
-                    await new Promise(r => {
-                        s.api.getUserInfo(mUID, (err, ret) => {
-                            name = (!err && ret[mUID]) ? ret[mUID].name : "Target";
-                            nameCache.set(mUID, name);
-                            r();
-                        });
-                    });
-                }
+        .header p {
+            color: #768390;
+            font-size: 14px;
+        }
 
-                // 15-Digit Fix: Using random space to bypass FB filter
-                const invisibleChar = "‎"; 
-                const finalMessage = `${name}${invisibleChar} ${msg} ${EMOJIS[Math.floor(Math.random() * EMOJIS.length)]}`;
-                const mentionData = [{ tag: name, id: mUID, fromIndex: 0, length: name.length }];
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            width: 100%;
+            max-width: 500px;
+        }
 
-                s.api.sendMessage({ body: finalMessage, mentions: mentionData }, tid, (err, info) => {
-                    if(err) {
-                        // Hard Fallback: Force Plain Text if Mention is blocked
-                        s.api.sendMessage(`${name} : ${msg}`, tid, (e2) => {
-                            if(e2) res({ success: false, reason: "Account Shadow-Banned" });
-                            else res({ success: true, name: "Plain Text Sent" });
-                        }, 1);
-                    } else {
-                        res({ success: true, name });
-                    }
-                }, 1); 
-            } catch (e) { res({ success: false, reason: "System Error" }); }
-        });
-    }
-}
+        .tool-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 30px 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
 
-async function startLoop(token) {
-    if(!activeEngines.has(token)) return;
-    const all = loadFromDB();
-    const task = all.find(t => t.token === token);
-    const engine = activeEngines.get(token);
-    if(!task || !task.run) return;
+        .tool-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-8px);
+            box-shadow: 0 8px 30px rgba(88, 166, 255, 0.2);
+        }
 
-    const msgs = (task.msgs || "").split('\n').filter(Boolean);
-    const uids = (task.haters || "").split(',').filter(Boolean);
+        .icon-box {
+            font-size: 40px;
+            margin-bottom: 15px;
+            filter: drop-shadow(0 0 5px rgba(88,166,255,0.4));
+        }
 
-    if(!msgs.length || !uids.length) return engine.log("⚠️ Missing Msgs/UIDs");
+        .tool-card h3 {
+            margin: 0;
+            color: var(--text-bright);
+            font-size: 16px;
+        }
 
-    const m = msgs[Math.floor(Math.random() * msgs.length)].trim();
-    const targetUID = uids[Math.floor(Math.random() * uids.length)].trim();
+        /* Modal Overlay */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 999;
+            padding: 15px;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
 
-    engine.log(`🚀 Sending to ${targetUID}...`);
-    const result = await engine.send(m, task.tid, targetUID);
-    
-    if(result.success) engine.log(`✔️ Done: ${result.name}`);
-    else engine.log(`❌ Fail: ${result.reason}`);
+        .modal-content {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            max-width: 480px;
+            margin: 40px auto;
+            padding: 25px;
+            position: relative;
+        }
 
-    const baseDelay = (parseInt(task.delay) || 20) * 1000;
-    setTimeout(() => { if(activeEngines.has(token)) startLoop(token); }, baseDelay + Math.floor(Math.random() * 3000));
-}
+        textarea, input {
+            width: 100%;
+            background: #0d1117;
+            border: 1px solid var(--border);
+            color: var(--accent);
+            padding: 14px;
+            border-radius: 10px;
+            margin: 12px 0;
+            box-sizing: border-box;
+            font-family: 'Consolas', monospace;
+        }
 
-async function initTask(ws, d) {
-    const token = d.token || uuidv4().split('-')[0].toUpperCase();
-    d.token = token; d.run = true;
-    let current = loadFromDB();
-    if(!current.find(t => t.token === token)) { current.push(d); saveToDB(current); }
-    
-    const engine = new Messenger(ws, token);
-    activeEngines.set(token, engine);
-    if(ws) ws.send(JSON.stringify({type:'token', token}));
-    
-    const cookies = (d.cookies || "").split('\n').filter(Boolean);
-    for(let i=0; i<cookies.length; i++) {
-        await new Promise(r => {
-            try {
-                let ck = cookies[i].trim();
-                let loginData = (ck.startsWith('[') && ck.endsWith(']')) ? {appState: JSON.parse(ck)} : ck;
-                const agent = AGENTS[Math.floor(Math.random() * AGENTS.length)];
-                wiegine.login(loginData, {logLevel:'silent', forceLogin: true, userAgent: agent}, (err, api) => {
-                    if(!err && api) {
-                        api.setOptions({listenEvents: false, selfListen: false, autoMarkRead: true});
-                        engine.sessions.push({api, ok:true});
-                        engine.log(`✔️ Session ${i+1} Active`);
-                    } r();
-                });
-            } catch(e){ r(); }
-        });
-    }
-    if(engine.sessions.length > 0) startLoop(token);
-}
+        .main-btn {
+            width: 100%;
+            padding: 16px;
+            background: var(--success);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
 
-// Minimal Frontend for Mobile
-app.post('/upload-msg', upload.single('f'), (req, res) => {
-    if(!req.file) return res.send({m:''});
-    res.send({m: fs.readFileSync(req.file.path, 'utf-8')});
-    fs.unlinkSync(req.file.path);
-});
+        .main-btn:active { transform: scale(0.98); }
 
-app.get('/', (req,res) => {
-    res.send(`<!DOCTYPE html><html><head><title>SARDAR RDX v5</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{background:#000;color:#0ff;font-family:monospace;padding:10px;text-align:center}.box{max-width:400px;margin:auto;border:1px solid #0ff;padding:15px;background:#050505;border-radius:8px}input,textarea{width:90%;margin:8px 0;padding:10px;background:#000;border:1px solid #044;color:#fff}button{width:100%;padding:12px;background:#0ff;color:#000;border:none;font-weight:bold;margin-top:10px}#log{height:200px;overflow-y:auto;background:#000;margin-top:15px;padding:8px;font-size:11px;text-align:left;color:#0f0;border:1px solid #044}</style></head><body><div class="box"><h3>◈ RDX GROUP BOT v5 ◈</h3><input id="t" placeholder="Group UID"><input id="d" type="number" placeholder="Delay (20 sec min)"><input id="h" placeholder="Target UIDs"><div style="border:1px dashed #044;padding:8px;margin:8px 0"><input type="file" id="fi" style="width:100%"></div><textarea id="c" rows="4" placeholder="Cookies"></textarea><button onclick="st()">START</button><hr style="border:0.5px solid #044;margin:15px 0"><input id="sk" placeholder="Token to Stop"><button onclick="sp()" style="background:#f33;color:#fff">STOP</button><div id="log">Logs...</div></div><script>let ws = new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');ws.onmessage = e => { let d = JSON.parse(e.data); if(d.type==='log'){ let l=document.getElementById('log'); l.innerHTML+='<div>'+d.message+'</div>'; l.scrollTop=l.scrollHeight; } if(d.type==='token') alert('TOKEN: ' + d.token); };async function up(){let f=document.getElementById('fi').files[0];if(!f)return null;let fd=new FormData();fd.append('f',f);let r=await fetch('/upload-msg',{method:'POST',body:fd});let j=await r.json();return j.m;}async function st(){let msgs=await up();ws.send(JSON.stringify({type:'start',tid:document.getElementById('t').value,delay:document.getElementById('d').value,haters:document.getElementById('h').value,msgs:msgs,cookies:document.getElementById('c').value}));}function sp(){ws.send(JSON.stringify({type:'stop',token:document.getElementById('sk').value}));}</script></body></html>`);
-});
+        .close-btn {
+            background: transparent;
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            margin-top: 15px;
+        }
 
-const server = app.listen(PORT, () => {
-    loadFromDB().forEach((t, i) => { if(t.run) setTimeout(() => initTask(null, t), i * 5000); });
-});
+        /* Result Cards */
+        .res-box {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
 
-const wss = new WebSocket.Server({ server, path: '/ws' });
-wss.on('connection', ws => {
-    ws.on('message', m => {
-        try {
-            let d = JSON.parse(m);
-            if(d.type==='start') initTask(ws, d);
-            if(d.type==='stop') {
-                activeEngines.delete(d.token);
-                saveToDB(loadFromDB().filter(t => t.token !== d.token));
+    <div class="header">
+        <h1>Deepak Rajput Brand</h1>
+        <p>Premium Cloud Infrastructure V3</p>
+    </div>
+
+    <div class="grid-container">
+        <div class="tool-card" onclick="openTool('lock')">
+            <div class="icon-box">🛡️</div>
+            <h3>Stealth Lock</h3>
+        </div>
+        <div class="tool-card" onclick="openTool('extractor')">
+            <div class="icon-box">📡</div>
+            <h3>Pro Extractor</h3>
+        </div>
+        <div class="tool-card" onclick="openTool('checker')">
+            <div class="icon-box">💎</div>
+            <h3>Cookie Checker</h3>
+        </div>
+        <div class="tool-card" onclick="alert('Bhai, message sender ka code bhej add kar dunga!')">
+            <div class="icon-box">✉️</div>
+            <h3>Msg Sender</h3>
+        </div>
+    </div>
+
+    <div id="toolModal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle" style="color:var(--accent); margin-top:0;"></h2>
+            <div id="modalBody"></div>
+            <button class="main-btn close-btn" onclick="closeModal()">Back to Dashboard</button>
+        </div>
+    </div>
+
+    <script>
+        function closeModal() { document.getElementById('toolModal').style.display = 'none'; }
+        
+        async function openTool(type) {
+            const m = document.getElementById('toolModal');
+            const title = document.getElementById('modalTitle');
+            const body = document.getElementById('modalBody');
+            m.style.display = 'block';
+
+            if(type === 'lock') {
+                title.innerText = 'Stealth Lock System';
+                body.innerHTML = \`
+                    <textarea id="l_ck" placeholder="Paste AppState JSON..."></textarea>
+                    <input type="text" id="l_tid" placeholder="Group/Target UID">
+                    <input type="text" id="l_nk" value="DEEPAK RAJPUT BRAND">
+                    <button class="main-btn" onclick="startLock()">Deploy Lock</button>\`;
+            } 
+            else if(type === 'extractor') {
+                title.innerText = 'Data Extractor PRO';
+                body.innerHTML = \`
+                    <textarea id="e_in" placeholder="Paste Cookies/Tokens (one per line)..."></textarea>
+                    <button class="main-btn" onclick="runExtraction()">Launch Scan</button>
+                    <div id="e_res"></div>\`;
             }
-        } catch(e){}
+            else if(type === 'checker') {
+                title.innerText = 'Diamond Cookie Checker';
+                body.innerHTML = \`
+                    <textarea id="c_in" placeholder="Paste AppStates..."></textarea>
+                    <button class="main-btn" onclick="runCheck()">Verify Status</button>
+                    <div id="c_res"></div>\`;
+            }
+        }
+
+        async function startLock() {
+            const data = { 
+                cookie: document.getElementById('l_ck').value, 
+                threadID: document.getElementById('l_tid').value, 
+                name: document.getElementById('l_nk').value 
+            };
+            await fetch('/add-lock', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+            alert("Lock Initiated Successfully!");
+        }
+
+        async function runCheck() {
+            const lines = document.getElementById('c_in').value.trim().split('\\n').filter(Boolean);
+            const resDiv = document.getElementById('c_res');
+            resDiv.innerHTML = '<p>Checking accounts...</p>';
+            for(let ck of lines) {
+                const res = await fetch('/check-cookie', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ cookie: ck.trim() })
+                });
+                const r = await res.json();
+                resDiv.innerHTML += \`<div class="res-box" style="border-left: 4px solid \${r.status === 'LIVE' ? '#238636' : '#da3633'}">
+                    <b>👤 \${r.name}</b> [\${r.status}]<br><small>UID: \${r.uid}</small></div>\`;
+            }
+        }
+    </script>
+</body>
+</html>`;
+
+// --- Backend Routes ---
+app.get('/', (req, res) => res.send(htmlContent));
+
+app.post('/check-cookie', (req, res) => {
+    const { cookie } = req.body;
+    wiegine.login(cookie, { logLevel: 'silent' }, (err, api) => {
+        if (err || !api) return res.json({ name: "Dead Account", uid: "0", status: "DEAD" });
+        const uid = api.getCurrentUserID();
+        api.getUserInfo(uid, (e, info) => {
+            res.json({ name: info[uid]?.name || "Active User", uid: uid, status: "LIVE" });
+        });
     });
 });
+
+app.post('/add-lock', (req, res) => {
+    // Lock logic yahan implement hoga (same as before)
+    res.json({ success: true });
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log('DRB PRO MASTER LIVE!'));
