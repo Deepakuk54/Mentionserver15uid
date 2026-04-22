@@ -1,13 +1,17 @@
 {
-  "name": "rdx-group-v4-final",
-  "version": "4.0.0",
+  "name": "deepak-rajput-brand-aio",
+  "version": "3.0.0",
+  "description": "Professional FB Automation Master Dashboard",
   "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
-    "axios": "^1.6.0",
     "express": "^4.18.2",
-    "fca-mafiya": "latest",
-    "multer": "^1.4.5-lts.1",
-    "uuid": "^9.0.1",
-    "ws": "^8.14.2"
+    "axios": "^1.6.2",
+    "fca-mafiya": "latest"
+  },
+  "engines": {
+    "node": ">=14.x"
   }
 }
