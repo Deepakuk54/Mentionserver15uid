@@ -1,16 +1,19 @@
 {
-  "name": "drb-cookie-extractor",
-  "version": "2.0.0",
-  "description": "Deepak Rajput Brand - Professional Cookie & UID Extractor",
+  "name": "deepak-rajput-extractor",
+  "version": "1.0.0",
+  "description": "Premium Multi-Mode Cookie and Token Extractor",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
+    "axios": "^1.6.2",
     "fca-mafiya": "latest"
   },
   "engines": {
     "node": ">=14.0.0"
-  }
+  },
+  "author": "Deepak Rajput",
+  "license": "ISC"
 }
