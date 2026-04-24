@@ -1,16 +1,13 @@
 {
-  "name": "drb-cookie-uid-tool",
+  "name": "drb-tool-v2",
   "version": "1.0.0",
-  "description": "Deepak Rajput Brand - Cookie Checker & UID Extractor",
+  "description": "Deepak Rajput Brand Tool",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "fca-mafiya": "1.3.11"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "fca-mafiya": "latest"
   }
 }
