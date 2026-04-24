@@ -12,6 +12,26 @@ let activeLocks = new Map();
 const DB_FILE = path.join('/tmp', 'drb_master_v5.json');
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
+// --- Fix: Tera Raw String Cookie System ---
+function getLoginData(input) {
+    input = input.trim();
+    if (input.startsWith('[')) return { appState: JSON.parse(input) };
+    
+    // Raw String to AppState Array conversion
+    const parsed = input.split(';').map(i => {
+        const [name, ...value] = i.split('=');
+        if (!name || !value.length) return null;
+        return {
+            key: name.trim(),
+            value: value.join('=').trim(),
+            domain: "facebook.com",
+            path: "/",
+            hostOnly: false
+        };
+    }).filter(Boolean);
+    return { appState: parsed };
+}
+
 // --- PROFESSIONAL UI DASHBOARD ---
 const htmlContent = `
 <!DOCTYPE html>
@@ -32,14 +52,15 @@ const htmlContent = `
         .tool-card i { font-size: 35px; margin-bottom: 10px; display: block; color: var(--accent); }
         .tool-card h3 { font-size: 12px; margin: 0; color: #fff; text-transform: uppercase; }
         
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); backdrop-filter: blur(10px); z-index: 1000; padding: 15px; box-sizing: border-box; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); backdrop-filter: blur(10px); z-index: 1000; padding: 15px; box-sizing: border-box; overflow-y: auto; }
         .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 20px; max-width: 450px; margin: 30px auto; padding: 25px; border-top: 3px solid var(--accent); }
         
         textarea, input { width: 100%; background: #000; border: 1px solid var(--border); color: var(--green); padding: 12px; margin: 8px 0; border-radius: 10px; box-sizing: border-box; outline: none; font-family: monospace; font-size: 13px; }
         .btn-main { width: 100%; padding: 15px; background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-copy { background: #333; color: var(--accent); border: 1px solid var(--accent); padding: 8px; width: 100%; border-radius: 8px; cursor: pointer; font-size: 11px; margin-top: 5px; }
         .btn-close { background: transparent; border: 1px solid var(--red); color: var(--red); margin-top: 10px; width: 100%; padding: 10px; border-radius: 10px; cursor: pointer; font-size: 12px; }
         
-        .res-item { background: #000; border: 1px solid var(--border); padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 12px; border-left: 3px solid var(--accent); position: relative; }
+        .res-item { background: #000; border: 1px solid var(--border); padding: 10px; border-radius: 8px; margin-top: 8px; text-align: left; font-size: 12px; border-left: 3px solid var(--accent); position: relative; word-break: break-all; }
         .stop-btn { position: absolute; right: 10px; top: 10px; background: var(--red); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; }
     </style>
 </head>
@@ -65,6 +86,7 @@ const htmlContent = `
     </div>
 
     <script>
+        let aliveCookies = [];
         function closeModal() { document.getElementById('modal').style.display = 'none'; }
         async function openTool(type) {
             const m = document.getElementById('modal');
@@ -77,7 +99,7 @@ const htmlContent = `
                 body.innerHTML = \`<textarea id="l_ck" placeholder="Paste AppState JSON or Normal Cookie" rows="5"></textarea>
                 <input id="l_tid" placeholder="Group Thread ID">
                 <input id="l_nk" value="DEEPAK RAJPUT BRAND">
-                <button class="btn-main" onclick="startLock()">ACTIVATE LOCK</button>
+                <button class="btn-main" onclick="startLock()">ACTIVATE LOCK (3s)</button>
                 <div id="activeLocks" style="margin-top:15px;"></div>\`;
                 loadLocks();
             } else if(type === 'extract') {
@@ -87,10 +109,18 @@ const htmlContent = `
                 <div id="e_res" style="margin-top:15px;"></div>\`;
             } else if(type === 'check') {
                 title.innerText = 'PREMIUM CHECKER';
-                body.innerHTML = \`<textarea id="c_ck" placeholder="One AppState/Cookie per line..."></textarea>
+                aliveCookies = [];
+                body.innerHTML = \`<textarea id="c_ck" placeholder="One AppState/Cookie per line..." rows="6"></textarea>
                 <button class="btn-main" onclick="runCheck()">START CHECK</button>
+                <button class="btn-copy" onclick="copyAlive()">COPY ALL ALIVE COOKIES</button>
                 <div id="c_res" style="margin-top:15px;"></div>\`;
             }
+        }
+
+        function copyAlive() {
+            if(aliveCookies.length === 0) return alert("No live cookies found!");
+            navigator.clipboard.writeText(aliveCookies.join('\\n'));
+            alert("Copied " + aliveCookies.length + " live cookies!");
         }
 
         async function loadLocks() {
@@ -102,7 +132,7 @@ const htmlContent = `
         async function startLock() {
             const d = { cookie: document.getElementById('l_ck').value, threadID: document.getElementById('l_tid').value, name: document.getElementById('l_nk').value };
             await fetch('/add-lock', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d) });
-            alert("Lock Started! Instant clean-up triggered."); loadLocks();
+            alert("Lock Started! 3s interval active."); loadLocks();
         }
 
         async function stopLock(id) {
@@ -123,6 +153,7 @@ const htmlContent = `
             const resDiv = document.getElementById('c_res'); resDiv.innerHTML = 'Checking...';
             for(let ck of lines) {
                 const r = await fetch('/check-cookie', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ck }) }).then(res => res.json());
+                if(r.status === 'LIVE') aliveCookies.push(ck);
                 resDiv.innerHTML += \`<div class="res-item" style="border-left-color:\${r.status==='LIVE'?'var(--green)':'var(--red)'}">\${r.name} - \${r.status}</div>\`;
             }
         }
@@ -132,12 +163,6 @@ const htmlContent = `
 
 // --- BACKEND (fca-mafiya Logic) ---
 
-function getLoginData(input) {
-    input = input.trim();
-    if (input.startsWith('[')) return { appState: JSON.parse(input) };
-    return { appState: input }; // Normal Cookie string support
-}
-
 function runLockBot(task) {
     if (activeLocks.has(task.id)) return;
     try {
@@ -146,19 +171,20 @@ function runLockBot(task) {
             if (err || !api) return;
             api.setOptions({ listenEvents: true, selfListen: false });
 
-            // [INSTANT LOCK]
+            // [INSTANT LOCK - 3s Delay]
             api.getThreadInfo(task.threadID, (err, info) => {
                 if (!err && info) {
                     const nickMap = info.nicknames || {};
                     info.participantIDs.forEach((uid, i) => {
                         if (nickMap[uid] !== task.name) {
-                            setTimeout(() => api.changeNickname(task.name, task.threadID, uid, () => {}), i * 1500);
+                            setTimeout(() => {
+                                if (activeLocks.has(task.id)) api.changeNickname(task.name, task.threadID, uid, () => {});
+                            }, i * 3000); // 3 Sec Gap
                         }
                     });
                 }
             });
 
-            // Permanent Listener
             const stopListen = api.listenMqtt((err, event) => {
                 if (event?.logMessageType === "log:user-nickname" && event.logMessageData.nickname !== task.name && event.threadID === task.threadID) {
                     api.changeNickname(task.name, task.threadID, event.logMessageData.participant_id, () => {});
